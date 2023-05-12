@@ -5,7 +5,7 @@ c=1; a=0; f=1;
 [p,e,t] = initmesh(g, 'Hmax', 0.2);
 
 u = -(p(1,:).^2+p(2,:).^2-1)/4;
-uh = assempde(bc,p,e,t,c,a,f);
+%uh = assempde(bc,p,e,t,c,a,f);
 uh1 = -(  p(1,:).^2 - p(1,:)./2 + p(2,:).^2 - p(2,:)./2  - 1/2 )/2.* (p(1,:).^2 + p(2,:).^2 - 1);
 
 t_ = t; t_(4,:)=[];
@@ -15,12 +15,12 @@ points = length(p);
 traingles = length(t_);
 edges_of_traingle = length(t_(:,1));
 
-normgraddifferror = zeros(1,points);
-%normgraddiffuh = zeros(1,points);
+%normgraddifferror = zeros(1,points);
+normgraddiffuh = zeros(1,points);
 graduh = zeros([2 points]);
 
-error = u-uh1';
-%uh = uh1';
+%error = u-uh1';
+uh = uh1;
 
 %в каждой точке
 for i =1:1:points
@@ -36,18 +36,18 @@ for i =1:1:points
 
             if i ~= j
                 eij = [p(1,j)-p(1,i) p(2,j)-p(2,i)];
-                tga = (error(j)-error(i))/norm(eij);
-                %tga = (uh(j)-uh(i))/norm(eij);
+                %tga = (error(j)-error(i))/norm(eij);
+                tga = (uh(j)-uh(i))/norm(eij);
                 eij = eij./norm(eij);
             
                 grad = eij.*tga;
                 norm_grad = norm(grad);
             
                 %запомнить
-                 if normgraddifferror(i) < norm_grad
-                    normgraddifferror(i) = norm_grad;
-                 %if normgraddiffuh(i) < norm_grad
-                    %normgraddiffuh(i) = norm_grad;
+                 %if normgraddifferror(i) < norm_grad
+                    %normgraddifferror(i) = norm_grad;
+                 if normgraddiffuh(i) < norm_grad
+                    normgraddiffuh(i) = norm_grad;
                     graduh(1, i) = grad(1);
                     graduh(2, i) = grad(2);
                 
@@ -80,8 +80,8 @@ for tr = 1:1:traingles
 end
 
 %осредняю градиенты
-%new_normgraddiffuh = zeros([1 points]);
-new_normgraddifferror = zeros([1 points]);
+new_normgraddiffuh = zeros([1 points]);
+%new_normgraddifferror = zeros([1 points]);
 neighbour_traingles_i = [];
 Tij = [];
 Omegai = 0;
@@ -118,21 +118,67 @@ for i=1:1:points
     end
     
     %осредненный градиент
-    %new_normgraddiffuh(i) = norm(gi);
-    new_normgraddifferror(i) = norm(gi);
+    new_normgraddiffuh(i) = norm(gi);
+    %new_normgraddifferror(i) = norm(gi);
 end
 
+ei = zeros([2 traingles]);
+%теперь в каждой точке есть осредненныф градиент. Продолжим внутрь треугольнка
+for i = 1:1:traingles
+    
+    a1 = p(1, t_(1, i));
+    a2 = p(1, t_(2, i));
+    a3 = p(1, t_(3, i));
+    
+    b1 = p(2, t_(1, i));
+    b2 = p(2, t_(2, i));
+    b3 = p(2, t_(3, i));
+        
+    ex = [  a1 a2 a3 ];
+    ey = [  b1 b2 b3 ];
+    
+    %для первой компоненты
+    
+    c1 = gi(1, t_(1, i));
+    c2 = gi(1, t_(2, i));
+    c3 = gi(1, t_(3, i));
+    
+    prevgrads = [graduh(1, t_(1, i)) graduh(1, t_(2, i)) graduh(1, t_(3, i))];
 
-ei = zeros([2 points]);
-%индикатор!
-for i = 1:1:points
-    ei(1,i) = norm(gi(:,i) - graduh(:,i));
-    ei(2,i) = i; %номер точки
+    d1 = (a2-a1)*(b3-b1) - (b2*b1)*(a3-a1);
+    d2 = (b2-b1)*(c3-c1) - (c2-c1)*(b3-b1);
+    d3 = (a2-a1)*(c3-c1) - (c2-c1)*(a3-a1);
+    
+    F1 = @(x,y) ( -d2/d1.*(x-a1) + d3/d1.*(y-b1) - max(abs(prevgrads))  ).^2;
+    
+    Ex2 = TriIntegral(F1, ex, ey);
+    
+    %для второй компоненты
+    
+    c1 = gi(2, t_(1, i));
+    c2 = gi(2, t_(2, i));
+    c3 = gi(2, t_(3, i));
+    
+    prevgrads = [graduh(2, t_(1, i)) graduh(2, t_(2, i)) graduh(2, t_(3, i))];
+
+    d1 = (a2-a1)*(b3-b1) - (b2*b1)*(a3-a1);
+    d2 = (b2-b1)*(c3-c1) - (c2-c1)*(b3-b1);
+    d3 = (a2-a1)*(c3-c1) - (c2-c1)*(a3-a1);
+    
+    F2 = @(x,y) ( -d2/d1.*(x-a1) + d3/d1.*(y-b1) - max(prevgrads)  ).^2;
+    
+    Ey2 = TriIntegral(F1, ex, ey);
+    
+    %общий индикатор на все
+    
+    ei(1,i) = sqrt(Ex2 + Ey2);
+    ei(2,i) = i; %номер треугольника
+    
 end
 
 %Сортировка по максимальной ошибке
-for i = 1:1:points-1
-    for j = 1:1:points-1
+for j = 1:1:traingles-1
+    for i = 1:1:traingles-1
         if ei(1,i)>ei(1, i+1)
             temp = ei(1,i);
             ei(1,i) = ei(1,i+1);
@@ -164,9 +210,15 @@ hold all;
 colormap('hsv');
 xlabel('x'), ylabel('y'), zlabel('||grad(uh) - G(grad(uh))||');
 colorbar;
-
 for i = 1:1:lim
-    plot3( p(1, ei(2, points-i+1)), p(2, ei(2, points-i+1)), 1 ,'ro');
+    traingle = ei(2, lim-i+1);
+    point1 = t_(1, traingle);
+    point2 = t_(2, traingle);
+    point3 = t_(3, traingle);
+    
+    px = (p(1, point1) + p(1, point2) + p(1, point3))/3;
+    py = (p(2, point1) + p(2, point2) + p(2, point3))/3;
+    plot3( px , py  ,   1 ,'go');
 end
 
 
